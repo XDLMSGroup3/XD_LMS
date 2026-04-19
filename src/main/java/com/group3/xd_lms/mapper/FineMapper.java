@@ -32,4 +32,16 @@ public interface FineMapper {
      * 汇总用户所有未支付罚款总额
      */
     BigDecimal sumUnpaidFinesByUserId(@Param("userId") Long userId);
+
+
+    /**
+     * 每日凌晨自动计算逾期金额
+     */
+    int incrementDailyFines(@Param("dailyFineAmount") BigDecimal dailyFineAmount);
+
+    /**
+     * 根据借阅记录ID查询罚款单，用于去重校验
+     */
+    Fine selectByBorrowRecordId(@Param("borrowRecordId") Long borrowRecordId);
+
 }

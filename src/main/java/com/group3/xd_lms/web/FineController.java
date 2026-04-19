@@ -52,12 +52,12 @@ public class FineController {
         // 1. 查询借阅记录
         BorrowRecord record = borrowRecordMapper.selectById(borrowRecordId);
         if (record == null) {
-            return Result.getResultMap(404, "借阅记录不存在");
+            return Result.getResultMap(404, "Borrowing records do not exist");
         }
         
         // 2. 检查是否已归还
         if (record.isReturned()) {
-            return Result.getResultMap(400, "该借阅记录已归还，无逾期罚款");
+            return Result.getResultMap(400, "The borrowed item has been returned, and there are no overdue penalties.");
         }
         
         // 3. 计算逾期天数
@@ -66,25 +66,18 @@ public class FineController {
         
         // 如果还未到应还日期，返回未逾期
         if (now.isBefore(dueDate) || now.isEqual(dueDate)) {
-            return Result.getResultMap(400, "该借阅记录未逾期");
+            return Result.getResultMap(400, "The borrowing record is not overdue.");
         }
         
         long overdueDays = ChronoUnit.DAYS.between(dueDate, now);
         if (overdueDays <= 0) {
-            return Result.getResultMap(400, "该借阅记录未逾期");
+            return Result.getResultMap(400, "The borrowing record is not overdue.");
         }
         
         // 4. 获取每日罚金配置
-        String finePerDayStr = systemSettingsMapper.selectValueByKey("fine_per_day");
-        if (finePerDayStr == null || finePerDayStr.trim().isEmpty()) {
-            return Result.getResultMap(500, "系统配置错误：未找到每日罚金配置");
-        }
-        
-        BigDecimal finePerDay;
-        try {
-            finePerDay = new BigDecimal(finePerDayStr);
-        } catch (NumberFormatException e) {
-            return Result.getResultMap(500, "系统配置错误：每日罚金配置格式不正确");
+        BigDecimal finePerDay = systemSettingsMapper.selectValueByKey("fine_per_day");
+        if (finePerDay == null) {
+            return Result.getResultMap(500, "System configuration error: Daily penalty configuration not found");
         }
         
         // 5. 计算罚款金额

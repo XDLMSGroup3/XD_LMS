@@ -32,4 +32,18 @@
         SELECT IFNULL(SUM(amount), 0) FROM fines WHERE user_id = #{userId} AND status = 'Unpaid'
     </select>
 
+    <!-- 每日自动累加逾期金额逻辑 -->
+    <!-- 逻辑：找到状态为 Unpaid 且对应的借阅记录还未归还的罚单，累加单价 -->
+    <update id="incrementDailyFines">
+        UPDATE fines f
+            JOIN borrow_records b ON f.borrow_record_id = b.id
+        SET f.amount = f.amount + #{dailyFineAmount}
+        WHERE f.status = 'Unpaid'
+          AND b.return_date IS NULL
+          AND b.due_date <![CDATA[ < ]]> NOW()
+    </update>
+
+    <select id="selectByBorrowRecordId" resultMap="BaseResultMap">
+        SELECT * FROM fines WHERE borrow_record_id = #{borrowRecordId} LIMIT 1
+    </select>
 </mapper>

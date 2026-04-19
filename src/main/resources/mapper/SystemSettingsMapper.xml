@@ -13,7 +13,7 @@
         SELECT * FROM system_settings
     </select>
 
-    <select id="selectValueByKey" resultType="java.lang.String">
+    <select id="selectValueByKey" resultType="java.math.BigDecimal">
         SELECT setting_value FROM system_settings WHERE setting_key = #{key}
     </select>
 

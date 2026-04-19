@@ -3,6 +3,8 @@ package com.group3.xd_lms.mapper;
 import com.group3.xd_lms.entity.SystemSetting;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -20,7 +22,7 @@ public interface SystemSettingsMapper {
     /**
      * 根据配置键获取具体配置值（如借阅天数）
      */
-    String selectValueByKey(@Param("key") String key);
+    BigDecimal selectValueByKey(@Param("key") String key);
 
     /**
      * 更新业务配置值 - 支持管理员 R2 修改核心规则
