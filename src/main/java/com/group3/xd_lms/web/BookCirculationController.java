@@ -6,11 +6,15 @@ import com.group3.xd_lms.entity.Reservation;
 import com.group3.xd_lms.mapper.BorrowRecordMapper;
 import com.group3.xd_lms.mapper.RenewalRequestMapper;
 import com.group3.xd_lms.mapper.ReservationMapper;
+import com.group3.xd_lms.mapper.SystemSettingsMapper;
 import com.group3.xd_lms.utils.Result;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.support.CustomSQLErrorCodesTranslation;
 import org.springframework.web.bind.annotation.*;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.List;
@@ -27,14 +31,16 @@ public class BookCirculationController {
     private final BorrowRecordMapper borrowRecordMapper;
     private final RenewalRequestMapper renewalRequestMapper;
     private final ReservationMapper reservationMapper;
-
+    private final SystemSettingsMapper systemSettingsMapper;
     // 构造函数注入
     public BookCirculationController(BorrowRecordMapper borrowRecordMapper,
                                      RenewalRequestMapper renewalRequestMapper,
-                                     ReservationMapper reservationMapper) {
+                                     ReservationMapper reservationMapper,
+                                     SystemSettingsMapper systemSettingsMapper) {
         this.borrowRecordMapper = borrowRecordMapper;
         this.renewalRequestMapper = renewalRequestMapper;
         this.reservationMapper = reservationMapper;
+        this.systemSettingsMapper = systemSettingsMapper;
     }
 
     // ==================== 一、续借管理 (Renewal Section) ====================
@@ -63,31 +69,31 @@ public class BookCirculationController {
             // 1. 查询借阅记录
             BorrowRecord borrowRecord = borrowRecordMapper.selectById(borrowRecordId);
             if (borrowRecord == null) {
-                return Result.getResultMap(404, "借阅记录不存在");
+                return Result.getResultMap(404, "The specified borrow record does not exist");
             }
 
             // 持有校验：只能给自己的图书续借
             if (!borrowRecord.getUserId().toString().equals(userId.toString())) {
-                return Result.getResultMap(403, "无权限：只能续借自己借阅的图书");
+                return Result.getResultMap(403, "Unauthorized: You can only renew books you currently hold");
             }
 
             // 已归还图书不能续借
             if (borrowRecord.getReturnDate() != null) {
-                return Result.getResultMap(400, "操作失败：图书已归还");
+                return Result.getResultMap(400, "Failed: This book has already been returned and cannot be renewed");
             }
 
             // 2. 核心业务逻辑：判断续借次数
             int currentRenewCount = borrowRecord.getRenewCount();
             if (currentRenewCount <= 2) {
                 // ==================== 场景1：次数≤2 → 自动续借 ====================
-                borrowRecord.setRenewCount(currentRenewCount + 1);
-                borrowRecord.setDueDate(borrowRecord.getDueDate().plusDays(30));
+                BigDecimal renwal_period = systemSettingsMapper.selectValueByKey("renewal_period");
+                borrowRecord.setDueDate(borrowRecord.getDueDate().plusDays(renwal_period.intValue()));
                 borrowRecordMapper.updateDueDateAndRenewCount(borrowRecord);
-                return Result.getResultMap(200, "自动续借成功！已延长30天");
+                return Result.getResultMap(200, "Auto renewal successful. New due date: " + borrowRecord.getDueDate().toString());
             } else {
                 // ==================== 场景2：次数>2 → 提交审批申请 ====================
                 if (reason == null || reason.trim().isEmpty()) {
-                    return Result.getResultMap(400, "续借次数超过2次，必须填写理由");
+                    return Result.getResultMap(400, "If the loan is renewed more than twice, a reason must be provided.");
                 }
                 // 创建续借申请
                 RenewalRequest request = new RenewalRequest();
@@ -99,12 +105,12 @@ public class BookCirculationController {
 
                 int rows = renewalRequestMapper.insert(request);
                 if (rows <= 0) {
-                    return Result.getResultMap(500, "提交续借申请失败");
+                    return Result.getResultMap(500, "The loan renewal application failed.");
                 }
-                return Result.getResultMap(200, "续借申请已提交，等待馆员审批");
+                return Result.getResultMap(200, "The renewal application has been submitted and is awaiting approval from the librarian.");
             }
         } catch (Exception e) {
-            return Result.getResultMap(500, "续借失败：" + e.getMessage());
+            return Result.getResultMap(500, "The Renewal Failed：" + e.getMessage());
         }
     }
 
@@ -119,9 +125,9 @@ public class BookCirculationController {
     public HashMap<String, Object> getPendingRenewalRequests() {
         try {
             List<RenewalRequest> pendingList = renewalRequestMapper.selectByStatus("Pending");
-            return Result.getListResultMap(200, "获取成功", pendingList.size(), pendingList);
+            return Result.getListResultMap(200, "Fetch Success", pendingList.size(), pendingList);
         } catch (Exception e) {
-            return Result.getResultMap(500, "获取失败：" + e.getMessage());
+            return Result.getResultMap(500, "Fetch Failed：" + e.getMessage());
         }
     }
 
@@ -175,7 +181,8 @@ public class BookCirculationController {
             // 4. 审批通过则更新借阅记录（使用团队已有的updateDueDateAndRenewCount方法）
             if (isApprove) {
                 borrowRecord.setRenewCount(borrowRecord.getRenewCount() + 1);
-                borrowRecord.setDueDate(borrowRecord.getDueDate().plusDays(30));
+                BigDecimal renwal_period = systemSettingsMapper.selectValueByKey("renewal_period");
+                borrowRecord.setDueDate(borrowRecord.getDueDate().plusDays(renwal_period.intValue()));
                 borrowRecordMapper.updateDueDateAndRenewCount(borrowRecord);
             }
 
@@ -202,9 +209,44 @@ public class BookCirculationController {
     @GetMapping("/transfer/qr-data")
     public HashMap<String, Object> getTransferQrData(
             @RequestParam Long borrowRecordId,
-            @RequestParam Integer userId) {
-        // 此处仅定义接口，不实现逻辑
-        return null;
+            @RequestParam Long userId) {
+        HashMap<String, Object> result = new HashMap<>();
+        try {
+            if (userId == null) {
+                result.put("status", 401);
+                result.put("message", "Please login first");
+                return result;
+            }
+            if (borrowRecordId == null) {
+                result.put("status", 400);
+                result.put("message", "Borrow record ID cannot be empty");
+                return result;
+            }
+            BorrowRecord record = borrowRecordMapper.selectById(borrowRecordId);
+            if (record == null) {
+                result.put("status", 404);
+                result.put("message", "Borrow record not found");
+                return result;
+            }
+            if (!record.getUserId().equals(userId)) {
+                result.put("status", 403);
+                result.put("message", "You are not the current holder of this book");
+                return result;
+            }
+            if (record.getReturnDate() != null) {
+                result.put("status", 400);
+                result.put("message", "This book has been returned");
+                return result;
+            }
+            String qrData = "transfer:" + borrowRecordId;
+            result.put("status", 200);
+            result.put("message", "Success");
+            result.put("data", qrData);
+        } catch (Exception e) {
+            result.put("status", 500);
+            result.put("message", "Error: " + e.getMessage());
+        }
+        return result;
     }
 
     /**
@@ -228,9 +270,57 @@ public class BookCirculationController {
     @PostMapping("/transfer/scan-confirm")
     public HashMap<String, Object> confirmTransferByScan(
             @RequestParam Long borrowRecordId,
-            @RequestParam Integer userId) {
+            @RequestParam Long userId) {
         // 核心逻辑：单条记录更新，修改 user_id, is_p2p_transfer 和 transfer_from_user_id
-        return null;
+        HashMap<String, Object> result = new HashMap<>();
+         try {
+            if (userId == null) {
+                result.put("status", 401);
+                result.put("message", "Please login first");
+                return result;
+            }
+            if (borrowRecordId == null) {
+                result.put("status", 400);
+                result.put("message", "Borrow record ID cannot be empty");
+                return result;
+            }
+            BorrowRecord record = borrowRecordMapper.selectById(borrowRecordId);
+            if (record == null) {
+                result.put("status", 404);
+                result.put("message", "Borrow record not found");
+                return result;
+            }
+            if (record.getReturnDate() != null) {
+                result.put("status", 400);
+                result.put("message", "This book has been returned");
+                return result;
+            }
+            if (record.getUserId().equals(userId)) {
+                result.put("status", 400);
+                result.put("message", "You already hold this book");
+                return result;
+            }
+            BigDecimal loanDays = systemSettingsMapper.selectValueByKey("max_loan_days");
+            int days = (loanDays != null) ? loanDays.intValue() : 30;
+            BorrowRecord updateRecord = BorrowRecord.builder()
+                    .id(borrowRecordId)
+                    .userId(userId)
+                    .transferFromUserId(record.getUserId())
+                    .dueDate(java.time.LocalDateTime.now().plusDays(days))
+                    .build();
+            int rows = borrowRecordMapper.updateForP2pTransfer(updateRecord);
+            if (rows > 0) {
+                result.put("status", 200);
+                result.put("message", "Transfer successful");
+            } else {
+                result.put("status", 500);
+                result.put("message", "Transfer failed");
+            }
+        } catch (Exception e) {
+            result.put("status", 500);
+            result.put("message", "Error: " + e.getMessage());
+        }
+        return result;
     }
 
 

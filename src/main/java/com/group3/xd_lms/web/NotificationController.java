@@ -3,6 +3,7 @@ package com.group3.xd_lms.web;
 import com.group3.xd_lms.entity.BorrowRecord;
 import com.group3.xd_lms.entity.Notification;
 import com.group3.xd_lms.entity.User;
+import com.group3.xd_lms.utils.Result;
 import com.group3.xd_lms.mapper.BorrowRecordMapper;
 import com.group3.xd_lms.mapper.NotificationMapper;
 import com.group3.xd_lms.mapper.UserMapper;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 
 /**
  * 消息通知控制类
@@ -118,8 +120,41 @@ public class NotificationController {
     @PostMapping("/send/overdue/batch")
     public HashMap<String, Object> batchSendOverdueReminders() {
         HashMap<String, Object> result = new HashMap<>();
-        result.put("code", HttpStatus.NOT_IMPLEMENTED.value());
-        result.put("message", "批量发送功能待实现");
+        try {
+            List<BorrowRecord> overdueRecords = borrowRecordMapper.selectOverdueRecords();
+            if (overdueRecords == null || overdueRecords.isEmpty()) {
+                result.put("code", HttpStatus.OK.value());
+                result.put("message", "No overdue records found");
+                result.put("data", 0);
+                return result;
+            }
+            int successCount = 0;
+            for (BorrowRecord record : overdueRecords) {
+                Long userId = record.getUserId();
+                if (userId == null) continue;
+                User user = userMapper.selectById(userId);
+                String userName = (user != null && user.getFullName() != null) ? user.getFullName() : "User" + userId;
+                String message = String.format("Dear %s, your borrowed book (ID: %d) is overdue. Please return it as soon as possible.",
+                        userName, record.getId());
+                Notification notification = Notification.builder()
+                        .userId(userId)
+                        .title("Overdue Reminder")
+                        .content(message)
+                        .type(Notification.NotificationType.Overdue)
+                        .isRead(false)
+                        .createdAt(LocalDateTime.now())
+                        .build();
+                notificationMapper.insertNotification(notification);
+                successCount++;
+            }
+            result.put("code", HttpStatus.OK.value());
+            result.put("message", "Batch notification sent successfully");
+            result.put("data", successCount);
+        } catch (Exception e) {
+            log.error("Batch send overdue reminders failed", e);
+            result.put("code", HttpStatus.INTERNAL_SERVER_ERROR.value());
+            result.put("message", "Batch send failed: " + e.getMessage());
+        }
         return result;
     }
 

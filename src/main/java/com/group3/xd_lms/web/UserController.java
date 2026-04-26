@@ -1,6 +1,7 @@
 package com.group3.xd_lms.web;
 
 import com.group3.xd_lms.entity.BorrowRecord;
+import com.group3.xd_lms.entity.SystemSetting;
 import com.group3.xd_lms.entity.User;
 import com.group3.xd_lms.mapper.SystemSettingsMapper;
 import com.group3.xd_lms.mapper.BorrowRecordMapper;
@@ -9,6 +10,8 @@ import com.group3.xd_lms.utils.Result;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+
+import java.math.BigDecimal;
 import java.util.*;
 
 
@@ -484,7 +487,51 @@ public class UserController {
     //TODO 管理员批量导入用户数据(R2)
     @PostMapping("/batch")
     public HashMap<String, Object> batchImportUsers(@RequestBody List<User> userList) {
-        return null;
+        if (userList == null || userList.isEmpty()) {
+            return Result.getResultMap(400, "User list cannot be empty");
+        }
+        int successCount = 0;
+        int failCount = 0;
+        List<String> errors = new ArrayList<>();
+        for (User user : userList) {
+            if (user.getUser_account() == null || user.getUser_account().trim().isEmpty()) {
+                failCount++;
+                errors.add("User account is empty");
+                continue;
+            }
+            if (user.getFullName() == null || user.getFullName().trim().isEmpty()) {
+                failCount++;
+                errors.add("User account " + user.getUser_account() + ": full name is empty");
+                continue;
+            }
+            User existingUser = userMapper.selectByUserAccount(user.getUser_account());
+            if (existingUser != null) {
+                failCount++;
+                errors.add("User account " + user.getUser_account() + " already exists");
+                continue;
+            }
+            if (user.getPassword() == null || user.getPassword().trim().isEmpty()) {
+                user.setPassword("123456");
+            }
+            if (user.getRoleId() == null) {
+                user.setRoleId(3);
+            }
+            if (user.getStatus() == null) {
+                user.setStatus(User.UserStatus.Active);
+            }
+            int rows = userMapper.insert(user);
+            if (rows > 0) {
+                successCount++;
+            } else {
+                failCount++;
+                errors.add("Failed to insert user: " + user.getUser_account());
+            }
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("successCount", successCount);
+        result.put("failCount", failCount);
+        result.put("errors", errors);
+        return Result.getResultMap(200, "Batch import completed", result);
     }
 
 
@@ -500,7 +547,11 @@ public class UserController {
     //TODO 获取全局系统配置信息
     @GetMapping("settings/getallsettings")
     public HashMap<String, Object> getAllSettings() {
-        return null;
+        List<SystemSetting> settings = systemSettingsMapper.selectAllSettings();
+        if (settings == null || settings.isEmpty()) {
+            return Result.getResultMap(404, "No settings found");
+        }
+        return Result.getResultMap(200, "Success", settings);
     }
 
     /**
@@ -513,7 +564,17 @@ public class UserController {
     //TODO 通过配置键获取配置信息
     @GetMapping("/settings/getbykey")
     public HashMap<String, Object> getSettingByKey(@RequestParam String key) {
-        return null;
+        if (key == null || key.trim().isEmpty()) {
+            return Result.getResultMap(400, "Setting key cannot be empty");
+        }
+        BigDecimal value = systemSettingsMapper.selectValueByKey(key);
+        if (value == null) {
+            return Result.getResultMap(404, "Setting key not found");
+        }
+        Map<String, Object> data = new HashMap<>();
+        data.put("key", key);
+        data.put("value", value);
+        return Result.getResultMap(200, "Success", data);
     }
 
     /**
@@ -532,7 +593,17 @@ public class UserController {
     public HashMap<String, Object> updateSystemRule(
             @RequestParam String key,
             @RequestParam  Float val) {
-        return null;
+        if (key == null || key.trim().isEmpty()) {
+            return Result.getResultMap(400, "Setting key cannot be empty");
+        }
+        if (val == null) {
+            return Result.getResultMap(400, "Setting value cannot be empty");
+        }
+        int rows = systemSettingsMapper.updateSetting(key, val);
+        if (rows > 0) {
+            return Result.getResultMap(200, "Setting updated successfully");
+        }
+        return Result.getResultMap(404, "Setting key not found");
     }
 
 }
