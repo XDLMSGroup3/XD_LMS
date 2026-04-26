@@ -13,6 +13,14 @@
         <result column="paid_at" property="paidAt"/>
     </resultMap>
 
+    <!-- 定义 DTO 的 ResultMap -->
+    <resultMap id="UnpaidFineDetailMap" type="com.group3.xd_lms.dto.UnpaidFineDetailDTO">
+        <result column="fine_id" property="fineId"/>
+        <result column="fine_amount" property="fineAmount"/>
+        <result column="book_title" property="bookTitle"/>
+        <association property="borrowRecord" resultMap="com.group3.xd_lms.mapper.BorrowRecordMapper.BaseResultMap"/>
+    </resultMap>
+
     <insert id="insertFine" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO fines (user_id, borrow_record_id, amount, status, created_at)
         VALUES (#{userId}, #{borrowRecordId}, #{amount}, #{status}, NOW())
@@ -20,6 +28,28 @@
 
     <select id="selectFinesByUserId" resultMap="BaseResultMap">
         SELECT * FROM fines WHERE user_id = #{userId} ORDER BY created_at DESC
+    </select>
+
+    <!-- 查询未支付罚款明细，关联借阅记录和书名 -->
+    <select id="selectUnpaidFinesWithDetails" resultMap="UnpaidFineDetailMap">
+        SELECT
+            f.id AS fine_id,
+            f.amount AS fine_amount,
+            br.id,
+            br.user_id,
+            br.rfid_tag,
+            br.borrow_date,
+            br.due_date,
+            br.return_date,
+            br.renew_count,
+            br.is_p2p_transfer,
+            br.transfer_from_user_id,
+            bm.title AS book_title
+        FROM fines f
+                 INNER JOIN borrow_records br ON f.borrow_record_id = br.id
+                 LEFT JOIN book_items bi ON br.rfid_tag = bi.rfid_tag
+                 LEFT JOIN book_metadata bm ON bi.isbn = bm.isbn
+        WHERE f.user_id = #{userId} AND f.status = 'Unpaid'
     </select>
 
     <update id="updatePaymentStatus">

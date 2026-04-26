@@ -13,6 +13,8 @@ import org.springframework.jdbc.support.CustomSQLErrorCodesTranslation;
 import org.springframework.web.bind.annotation.*;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.List;
+import com.group3.xd_lms.entity.RenewalRequest.RequestStatus;
 
 /**
  * 图书流转控制类
@@ -57,8 +59,53 @@ public class BookCirculationController {
             @RequestParam Long borrowRecordId,
             @RequestParam(required = false) String reason,
             @RequestParam Integer userId) {
-        // 核心逻辑：次数判断 -> 自动延期 或 写入审批表
-        return null;
+        try {
+            // 1. 查询借阅记录
+            BorrowRecord borrowRecord = borrowRecordMapper.selectById(borrowRecordId);
+            if (borrowRecord == null) {
+                return Result.getResultMap(404, "借阅记录不存在");
+            }
+
+            // 持有校验：只能给自己的图书续借
+            if (!borrowRecord.getUserId().toString().equals(userId.toString())) {
+                return Result.getResultMap(403, "无权限：只能续借自己借阅的图书");
+            }
+
+            // 已归还图书不能续借
+            if (borrowRecord.getReturnDate() != null) {
+                return Result.getResultMap(400, "操作失败：图书已归还");
+            }
+
+            // 2. 核心业务逻辑：判断续借次数
+            int currentRenewCount = borrowRecord.getRenewCount();
+            if (currentRenewCount <= 2) {
+                // ==================== 场景1：次数≤2 → 自动续借 ====================
+                borrowRecord.setRenewCount(currentRenewCount + 1);
+                borrowRecord.setDueDate(borrowRecord.getDueDate().plusDays(30));
+                borrowRecordMapper.updateDueDateAndRenewCount(borrowRecord);
+                return Result.getResultMap(200, "自动续借成功！已延长30天");
+            } else {
+                // ==================== 场景2：次数>2 → 提交审批申请 ====================
+                if (reason == null || reason.trim().isEmpty()) {
+                    return Result.getResultMap(400, "续借次数超过2次，必须填写理由");
+                }
+                // 创建续借申请
+                RenewalRequest request = new RenewalRequest();
+                request.setBorrowRecordId(borrowRecordId.intValue());
+                request.setUserId(userId);
+                request.setReason(reason);
+                request.setStatus(RenewalRequest.RequestStatus.Pending);
+                request.setRequestDate(java.time.LocalDateTime.now());
+
+                int rows = renewalRequestMapper.insert(request);
+                if (rows <= 0) {
+                    return Result.getResultMap(500, "提交续借申请失败");
+                }
+                return Result.getResultMap(200, "续借申请已提交，等待馆员审批");
+            }
+        } catch (Exception e) {
+            return Result.getResultMap(500, "续借失败：" + e.getMessage());
+        }
     }
 
     /**
@@ -70,7 +117,12 @@ public class BookCirculationController {
     //Todo 图书管理员获取待审批列表
     @GetMapping("/renew/pending")
     public HashMap<String, Object> getPendingRenewalRequests() {
-        return null;
+        try {
+            List<RenewalRequest> pendingList = renewalRequestMapper.selectByStatus("Pending");
+            return Result.getListResultMap(200, "获取成功", pendingList.size(), pendingList);
+        } catch (Exception e) {
+            return Result.getResultMap(500, "获取失败：" + e.getMessage());
+        }
     }
 
     /**
@@ -91,9 +143,49 @@ public class BookCirculationController {
             @RequestParam Integer requestId,
             @RequestParam Boolean isApprove,
             @RequestParam(required = false) String remark) {
-        return null;
+        try {
+            // 1. 查询续借申请
+            RenewalRequest request = renewalRequestMapper.selectById(requestId);
+            if (request == null) {
+                return Result.getResultMap(404, "续借申请不存在");
+            }
+            if (request.getStatus() != RequestStatus.Pending) {
+                return Result.getResultMap(400, "该申请已处理，无法重复审批");
+            }
+
+            // 2. 核心校验：必须是该书当前的持有者
+            BorrowRecord borrowRecord = borrowRecordMapper.selectById(request.getBorrowRecordId().longValue());
+            if (borrowRecord == null) {
+                return Result.getResultMap(404, "关联的借阅记录不存在");
+            }
+            if (!borrowRecord.getUserId().toString().equals(request.getUserId().toString())) {
+                return Result.getResultMap(403, "校验失败：申请人不是该书当前持有者");
+            }
+
+
+            // 3. 更新申请状态
+            request.setStatus(isApprove ? RequestStatus.Approved : RequestStatus.Rejected);
+            request.setLibrarianRemark(remark);
+            request.setProcessedAt(java.time.LocalDateTime.now());
+            int updateRows = renewalRequestMapper.updateAuditStatus(request);
+            if (updateRows <= 0) {
+                return Result.getResultMap(500, "更新审批状态失败");
+            }
+
+            // 4. 审批通过则更新借阅记录（使用团队已有的updateDueDateAndRenewCount方法）
+            if (isApprove) {
+                borrowRecord.setRenewCount(borrowRecord.getRenewCount() + 1);
+                borrowRecord.setDueDate(borrowRecord.getDueDate().plusDays(30));
+                borrowRecordMapper.updateDueDateAndRenewCount(borrowRecord);
+            }
+
+            return Result.getResultMap(200, isApprove ? "审批通过" : "审批驳回");
+        } catch (Exception e) {
+            return Result.getResultMap(500, "审批失败：" + e.getMessage());
+        }
     }
 
+    
 
     // ==================== 二、转借管理 (Transfer Section) ====================
     /**

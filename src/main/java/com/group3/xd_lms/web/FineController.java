@@ -1,15 +1,18 @@
 package com.group3.xd_lms.web;
 
+import com.group3.xd_lms.dto.UnpaidFineDetailDTO;
+import com.group3.xd_lms.entity.User;
 import com.group3.xd_lms.mapper.FineMapper;
 import com.group3.xd_lms.mapper.BorrowRecordMapper;
 import com.group3.xd_lms.mapper.SystemSettingsMapper;
 import com.group3.xd_lms.entity.BorrowRecord;
+import com.group3.xd_lms.mapper.UserMapper;
 import com.group3.xd_lms.utils.Result;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
-import java.util.HashMap;
-import java.util.Map;
+
+import java.util.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -25,13 +28,16 @@ public class FineController {
     private final FineMapper fineMapper;
     private final BorrowRecordMapper borrowRecordMapper;
     private final SystemSettingsMapper systemSettingsMapper;
+    private final UserMapper userMapper;
     
     FineController(FineMapper fineMapper, 
                    BorrowRecordMapper borrowRecordMapper,
-                   SystemSettingsMapper systemSettingsMapper) {
+                   SystemSettingsMapper systemSettingsMapper,
+                   UserMapper userMapper) {
         this.fineMapper = fineMapper;
         this.borrowRecordMapper = borrowRecordMapper;
         this.systemSettingsMapper = systemSettingsMapper;
+        this.userMapper = userMapper;
     }
 
     /**
@@ -107,8 +113,17 @@ public class FineController {
     //Todo 图书管理员获取该读者名下所有的未缴纳罚款
     @GetMapping("/my-unpaid")
     public HashMap<String, Object> getMyUnpaidFines(@RequestParam Integer userId) {
-        // 此处仅定义接口，不实现逻辑
-        return null;
+        HashMap<String, Object> result = new HashMap<>();
+        Long userIdLong = userId.longValue();
+
+        List<UnpaidFineDetailDTO> details = fineMapper.selectUnpaidFinesWithDetails(userIdLong);
+        if (details == null) details = Collections.emptyList();
+
+        result.put("unpaidFines", details);
+        result.put("count", details.size());
+        result.put("userId", userId);
+
+        return result;
     }
 
     /**
@@ -157,7 +172,29 @@ public class FineController {
     //Todo 图书管理员查看所有未缴纳罚款
     @GetMapping("/admin/summary")
     public HashMap<String, Object> getAdminFineSummary() {
-        // 此处仅定义接口，不实现逻辑
-        return null;
+        HashMap<String, Object> result = new HashMap<>();
+        List<UnpaidFineDetailDTO> allUnpaidFines = new ArrayList<>();
+        BigDecimal totalAmount = BigDecimal.ZERO;
+
+        List<User> users = userMapper.selectAll();
+        if (users == null) users = Collections.emptyList();
+
+        for (User user : users) {
+            List<UnpaidFineDetailDTO> details = fineMapper.selectUnpaidFinesWithDetails(user.getId());
+            if (details != null && !details.isEmpty()) {
+                allUnpaidFines.addAll(details);
+                // 累加金额（假设 DTO 中有 fineAmount 字段）
+                totalAmount = totalAmount.add(
+                        details.stream().map(UnpaidFineDetailDTO::getFineAmount)
+                                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                );
+            }
+        }
+
+        result.put("unpaidFines", allUnpaidFines);
+        result.put("totalCount", allUnpaidFines.size());
+        result.put("totalUnpaidAmount", totalAmount);
+        result.put("timestamp", LocalDateTime.now());
+        return result;
     }
 }

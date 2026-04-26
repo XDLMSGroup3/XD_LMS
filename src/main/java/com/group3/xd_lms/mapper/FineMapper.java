@@ -1,5 +1,6 @@
 package com.group3.xd_lms.mapper;
 
+import com.group3.xd_lms.dto.UnpaidFineDetailDTO;
 import com.group3.xd_lms.entity.Fine;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -17,6 +18,12 @@ public interface FineMapper {
      * 查询个人罚款明细 - 对应读者 R2 查询逾期费用功能
      */
     List<Fine> selectFinesByUserId(@Param("userId") Long userId);
+
+    /**
+     * 查询个人未支付罚款明细 - 包含关联的借阅记录和书籍信息
+     * 对应读者 R2 查询逾期费用功能，提供更丰富的罚款上下文
+     */
+    List<UnpaidFineDetailDTO> selectUnpaidFinesWithDetails(@Param("userId") Long userId);
 
     /**
      * 产生逾期罚款记录 - 系统扫描逾期后自动生成
