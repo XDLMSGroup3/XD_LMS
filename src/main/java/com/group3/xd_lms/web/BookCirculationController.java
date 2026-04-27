@@ -88,6 +88,7 @@ public class BookCirculationController {
                 // ==================== 场景1：次数≤2 → 自动续借 ====================
                 BigDecimal renwal_period = systemSettingsMapper.selectValueByKey("renewal_period");
                 borrowRecord.setDueDate(borrowRecord.getDueDate().plusDays(renwal_period.intValue()));
+                borrowRecord.setRenewCount(currentRenewCount + 1);
                 borrowRecordMapper.updateDueDateAndRenewCount(borrowRecord);
                 return Result.getResultMap(200, "Auto renewal successful. New due date: " + borrowRecord.getDueDate().toString());
             } else {
