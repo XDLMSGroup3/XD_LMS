@@ -84,31 +84,16 @@ public class BookCirculationController {
 
             // 2. 核心业务逻辑：判断续借次数
             int currentRenewCount = borrowRecord.getRenewCount();
-            if (currentRenewCount <= 2) {
-                // ==================== 场景1：次数≤2 → 自动续借 ====================
+            if (currentRenewCount < 2) {
+                // ==================== 场景1：次数<2 → 自动续借 ====================
                 BigDecimal renwal_period = systemSettingsMapper.selectValueByKey("renewal_period");
                 borrowRecord.setDueDate(borrowRecord.getDueDate().plusDays(renwal_period.intValue()));
                 borrowRecord.setRenewCount(currentRenewCount + 1);
                 borrowRecordMapper.updateDueDateAndRenewCount(borrowRecord);
                 return Result.getResultMap(200, "Auto renewal successful. New due date: " + borrowRecord.getDueDate().toString());
             } else {
-                // ==================== 场景2：次数>2 → 提交审批申请 ====================
-                if (reason == null || reason.trim().isEmpty()) {
-                    return Result.getResultMap(400, "If the loan is renewed more than twice, a reason must be provided.");
-                }
-                // 创建续借申请
-                RenewalRequest request = new RenewalRequest();
-                request.setBorrowRecordId(borrowRecordId.intValue());
-                request.setUserId(userId);
-                request.setReason(reason);
-                request.setStatus(RenewalRequest.RequestStatus.Pending);
-                request.setRequestDate(java.time.LocalDateTime.now());
-
-                int rows = renewalRequestMapper.insert(request);
-                if (rows <= 0) {
-                    return Result.getResultMap(500, "The loan renewal application failed.");
-                }
-                return Result.getResultMap(200, "The renewal application has been submitted and is awaiting approval from the librarian.");
+                // ==================== 场景2：次数>2 → 驳回申请 ====================
+                return Result.getResultMap(500,"You can only renew your loan twice at most.");
             }
         } catch (Exception e) {
             return Result.getResultMap(500, "The Renewal Failed：" + e.getMessage());
@@ -206,13 +191,13 @@ public class BookCirculationController {
      * @param userId 用于校验操作者是否为该书当前真实持有人
      * @return HashMap<String, Object> 包含用于生成二维码的数据字符串
      */
-    //Todo 持有者生成转借二维码
     @GetMapping("/transfer/qr-data")
     public HashMap<String, Object> getTransferQrData(
             @RequestParam Long borrowRecordId,
             @RequestParam Long userId) {
         HashMap<String, Object> result = new HashMap<>();
         try {
+            // 1. 基础校验
             if (userId == null) {
                 result.put("status", 401);
                 result.put("message", "Please login first");
@@ -223,29 +208,45 @@ public class BookCirculationController {
                 result.put("message", "Borrow record ID cannot be empty");
                 return result;
             }
+
+            // 2. 业务校验：是否存在该记录
             BorrowRecord record = borrowRecordMapper.selectById(borrowRecordId);
             if (record == null) {
                 result.put("status", 404);
                 result.put("message", "Borrow record not found");
                 return result;
             }
+
+            // 3. 权限校验：操作者必须是当前持有人
             if (!record.getUserId().equals(userId)) {
                 result.put("status", 403);
                 result.put("message", "You are not the current holder of this book");
                 return result;
             }
+
+            // 4. 状态校验：书必须是未归还状态
             if (record.getReturnDate() != null) {
                 result.put("status", 400);
                 result.put("message", "This book has been returned");
                 return result;
             }
-            String qrData = "transfer:" + borrowRecordId;
+
+            // --- 核心修改部分 ---
+            // 构造一个包含必要信息的 Map
+            HashMap<String, Object> qrPayload = new HashMap<>();
+            qrPayload.put("borrowRecordId", borrowRecordId);
+            qrPayload.put("fromUserId", userId);
+            qrPayload.put("timestamp", System.currentTimeMillis()); // 增加时间戳，防止截屏长久有效
+            qrPayload.put("type", "BOOK_TRANSFER"); // 标识这是转借业务
+
             result.put("status", 200);
             result.put("message", "Success");
-            result.put("data", qrData);
+            result.put("data", qrPayload); // 返回对象而非字符串
+            // --------------------
+
         } catch (Exception e) {
             result.put("status", 500);
-            result.put("message", "Error: " + e.getMessage());
+            result.put("message", "Internal Server Error: " + e.getMessage());
         }
         return result;
     }

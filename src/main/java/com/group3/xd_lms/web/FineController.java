@@ -1,6 +1,7 @@
 package com.group3.xd_lms.web;
 
 import com.group3.xd_lms.dto.UnpaidFineDetailDTO;
+import com.group3.xd_lms.entity.Fine;
 import com.group3.xd_lms.entity.User;
 import com.group3.xd_lms.mapper.FineMapper;
 import com.group3.xd_lms.mapper.BorrowRecordMapper;
@@ -8,6 +9,7 @@ import com.group3.xd_lms.mapper.SystemSettingsMapper;
 import com.group3.xd_lms.entity.BorrowRecord;
 import com.group3.xd_lms.mapper.UserMapper;
 import com.group3.xd_lms.utils.Result;
+import com.sun.jdi.LongValue;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -57,6 +59,7 @@ public class FineController {
     public HashMap<String, Object> calculateOverdueFine(@PathVariable Long borrowRecordId) {
         // 1. 查询借阅记录
         BorrowRecord record = borrowRecordMapper.selectById(borrowRecordId);
+        Fine fine = new Fine();
         if (record == null) {
             return Result.getResultMap(404, "Borrowing records do not exist");
         }
@@ -74,7 +77,7 @@ public class FineController {
         if (now.isBefore(dueDate) || now.isEqual(dueDate)) {
             return Result.getResultMap(400, "The borrowing record is not overdue.");
         }
-        
+
         long overdueDays = ChronoUnit.DAYS.between(dueDate, now);
         if (overdueDays <= 0) {
             return Result.getResultMap(400, "The borrowing record is not overdue.");
@@ -88,7 +91,7 @@ public class FineController {
         
         // 5. 计算罚款金额
         BigDecimal calculatedAmount = finePerDay.multiply(BigDecimal.valueOf(overdueDays));
-        
+
         // 6. 返回结果
         HashMap<String, Object> result = new HashMap<>();
         result.put("overdueDays", overdueDays);
@@ -154,13 +157,34 @@ public class FineController {
         
         // 更新罚款状态为Paid
         int updated = fineMapper.updatePaymentStatus(fineId.longValue(), "Paid");
-        
         // 检查更新是否成功
         if (updated > 0) {
             return Result.getResultMap(200, "Fine paid successfully");
         } else {
             return Result.getResultMap(404, "Fine record does not exist or update failed");
         }
+    }
+    /**
+     * 根据借阅记录查询欠款记录
+     * URL: POST /fines/getbyrecord
+     * 权限: Reader
+     * 业务逻辑说明：
+     * 根据借阅记录在数据库中查询欠款id
+     *
+     * @param borrowRecordId 借阅记录ID
+     * @return HashMap<String, Object> 返回操作结果
+     */
+    @GetMapping("/calculate/getbyrecord")
+    public HashMap<String, Object> GetFineByRecordId(@RequestParam Long borrowRecordId) {
+        Fine fine = fineMapper.selectByBorrowRecordId(borrowRecordId);
+        if(fine == null) {
+            return Result.getResultMap(404, "Not Exist");
+        }
+        HashMap<String, Object> result = new HashMap<>();
+        result.put("fine", fine);
+        result.put("status", 200);
+        result.put("message", "查询成功");
+        return result;
     }
 
     /**

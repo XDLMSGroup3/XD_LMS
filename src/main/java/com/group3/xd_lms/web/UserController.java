@@ -109,13 +109,11 @@ public class UserController {
      * URL: GET /users/me
      * 功能：从 Session 中获取当前用户 ID，并查询完整的用户详情
      *
-     * @param session 会话对象，用于获取当前登录用户 ID
+     * @param userId 当前登录用户 ID
      * @return HashMap<String, Object> 包含用户实体的通用结果
      */
     @GetMapping("/me")
-    public HashMap<String, Object> getCurrentUserProfile(HttpSession session) {
-        // 从会话获取当前登录用户ID
-        Long userId = (Long) session.getAttribute("userId");
+    public HashMap<String, Object> getCurrentUserProfile(@RequestParam Long userId) {
         if (userId == null) {
             return Result.getResultMap(401, "请先登录");
         }

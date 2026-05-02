@@ -51,4 +51,12 @@ public interface FineMapper {
      */
     Fine selectByBorrowRecordId(@Param("borrowRecordId") Long borrowRecordId);
 
+    /**
+     * 更新罚款金额（直接覆盖，不累加）
+     * @param id     罚款记录 ID
+     * @param amount 新的罚款金额
+     * @return 更新的行数
+     */
+    int updateFineAmount(@Param("id") Long id, @Param("amount") BigDecimal amount);
+
 }

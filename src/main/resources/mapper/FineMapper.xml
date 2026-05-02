@@ -76,4 +76,10 @@
     <select id="selectByBorrowRecordId" resultMap="BaseResultMap">
         SELECT * FROM fines WHERE borrow_record_id = #{borrowRecordId} LIMIT 1
     </select>
+
+    <update id="updateFineAmount">
+        UPDATE fines
+        SET amount = #{amount}
+        WHERE id = #{id}
+    </update>
 </mapper>
