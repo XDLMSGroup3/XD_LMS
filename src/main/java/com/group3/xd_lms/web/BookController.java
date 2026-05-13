@@ -452,7 +452,7 @@ public class BookController {
             String isbn = (String) requestBody.get("isbn");
             Integer count = (Integer) requestBody.get("count");
             String manualCategory = (String) requestBody.get("category");  // ✅ 新增：管理员手动输入的分类
-
+            String location = (String) requestBody.get("location");
             if (isbn == null || isbn.trim().isEmpty()) {
                 return Result.getResultMap(400, "isbn is required");
             }
@@ -477,7 +477,7 @@ public class BookController {
 
             for (int i = 0; i < count; i++) {
                 String rfidTag = generateUniqueRfidTag();
-                BookItem bookItem = createBookItem(isbn, rfidTag);
+                BookItem bookItem = createBookItem(isbn, rfidTag,location);
                 bookItemMapper.insert(bookItem);
 
                 Map<String, String> itemInfo = new HashMap<>();
@@ -491,7 +491,7 @@ public class BookController {
             Map<String, Object> resultData = new HashMap<>();
             resultData.put("isbn", isbn);
             resultData.put("title", meta.getTitle());
-            resultData.put("category", meta.getCategory());  // ✅ 返回最终使用的分类
+            resultData.put("category", meta.getCategory());// ✅ 返回最终使用的分类
             resultData.put("count", count);
             resultData.put("rfidTags", rfidTags);
             resultData.put("createdItems", createdItems);
@@ -615,10 +615,11 @@ public class BookController {
     /**
      * 创建 BookItem 对象
      */
-    private BookItem createBookItem(String isbn, String rfidTag) {
+    private BookItem createBookItem(String isbn, String rfidTag,String location) {
         BookItem item = new BookItem();
         item.setIsbn(isbn);
         item.setRfidTag(rfidTag);
+        item.setLocation(location);
         item.setStatus(BookItem.BookStatus.Available); // 默认状态为可借
         item.setAddedAt(LocalDateTime.now());
         return item;

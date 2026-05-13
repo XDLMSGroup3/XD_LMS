@@ -292,6 +292,11 @@ public class BookCirculationController {
                 result.put("message", "Borrow record not found");
                 return result;
             }
+            if (record.getTransferFromUserId() != null) {
+                 result.put("status", 400);
+                 result.put("message", "This book has already been transferred once and cannot be re-transferred");
+                 return result;
+             }
             if (record.getReturnDate() != null) {
                 result.put("status", 400);
                 result.put("message", "This book has been returned");
