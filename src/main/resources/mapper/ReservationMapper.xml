@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.group3.xd_lms.mapper.ReservationMapper">
+
+    <resultMap id="BaseResultMap" type="com.group3.xd_lms.entity.Reservation">
+        <id column="id" property="id"/>
+        <result column="isbn" property="isbn"/>
+        <result column="user_id" property="userId"/>
+        <result column="status" property="status"/>
+        <result column="request_date" property="requestDate"/>
+        <result column="notified_at" property="notifiedAt"/>
+        <result column="expiration_date" property="expirationDate"/>
+    </resultMap>
+
+    <insert id="insertReservation">
+        INSERT INTO reservations (isbn, user_id, status, request_date)
+        VALUES (#{isbn}, #{userId}, 'Waiting', NOW())
+    </insert>
+
+    <select id="selectReadyReservations" resultMap="BaseResultMap">
+        SELECT * FROM reservations WHERE status = 'Ready'
+    </select>
+
+    <update id="updateReservationStatus">
+        UPDATE reservations
+        <set>
+            <if test="status != null">status = #{status},</if>
+            <if test="notifiedAt != null">notified_at = #{notifiedAt},</if>
+            <if test="expirationDate != null">expiration_date = #{expirationDate}</if>
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <select id="selectFirstInQueue" resultMap="BaseResultMap">
+        SELECT * FROM reservations
+        WHERE isbn = #{isbn} AND status = 'Waiting'
+        ORDER BY request_date ASC LIMIT 1
+    </select>
+
+</mapper>

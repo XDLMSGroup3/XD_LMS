@@ -73,6 +73,16 @@ public class BorrowRecord {
      */
     @Default
     private Integer renewCount = 0;
+    /**
+     * 是否通过读者间转借获得 (R2 新增)
+     */
+    @Default
+    private Boolean isP2pTransfer = false;
+
+    /**
+     * 转借来源的用户ID (R2 新增)
+     */
+    private Long transferFromUserId;
 
     // ==================== 业务辅助方法（核心高频判断逻辑） ====================
     /**
@@ -88,6 +98,7 @@ public class BorrowRecord {
     public boolean isOverdue() {
         return !isReturned() && LocalDateTime.now().isAfter(this.dueDate);
     }
+
 
     /**
      * 判断是否可续借（未归还、未逾期，可配合系统配置的最大续借次数做扩展）

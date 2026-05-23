@@ -1,13 +1,22 @@
 package com.group3.xd_lms.web;
 
 import com.group3.xd_lms.entity.BorrowRecord;
+import com.group3.xd_lms.entity.SystemSetting;
 import com.group3.xd_lms.entity.User;
+import com.group3.xd_lms.mapper.FineMapper;
+import com.group3.xd_lms.mapper.SystemSettingsMapper;
 import com.group3.xd_lms.mapper.BorrowRecordMapper;
 import com.group3.xd_lms.mapper.UserMapper;
+import com.group3.xd_lms.utils.JwtUtils;
 import com.group3.xd_lms.utils.Result;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.web.bind.annotation.*;
+
+import java.math.BigDecimal;
 import java.util.*;
 
 
@@ -15,13 +24,15 @@ import java.util.*;
 @RequestMapping("/users")
 public class UserController {
 
-    @Autowired
     private final UserMapper userMapper;
     private final BorrowRecordMapper borrowRecordMapper;
-
-    public UserController(UserMapper userMapper, BorrowRecordMapper borrowRecordMapper) {
+    private final SystemSettingsMapper systemSettingsMapper;
+    private final FineMapper fineMapper;
+    public UserController(UserMapper userMapper,BorrowRecordMapper borrowRecordMapper,SystemSettingsMapper systemSettingsMapper,FineMapper fineMapper) {
         this.userMapper = userMapper;
         this.borrowRecordMapper = borrowRecordMapper;
+        this.systemSettingsMapper = systemSettingsMapper;
+        this.fineMapper = fineMapper;
     }
     /**
      * 用户注册接口
@@ -91,20 +102,17 @@ public class UserController {
         User res = userMapper.selectById(Long.valueOf(userId));
         return Result.getResultMap(200, "Get User Status Success", res.getStatus());
     }
-
     /**
      * 用户登录接口
      * URL: POST /users/login
      * 功能：验证账号密码，设置Session，返回用户信息及权限
      *
      * @param loginParams 包含密码和用户名
-     * @param session 会话对象
      * @return Result 封装的登录结果
      */
     @PostMapping("/login")
     public HashMap<String, Object> login(
-            @RequestBody Map<String, String> loginParams,
-            HttpSession session) {
+            @RequestBody Map<String, String> loginParams) {
 
         // 2. 从 Map 中获取前端传来的 key
         String user_account = loginParams.get("user_account");
@@ -115,8 +123,6 @@ public class UserController {
                 user_account.trim().isEmpty() || password.trim().isEmpty()) {
             return Result.getResultMap(400, "账号或密码不能为空");
         }
-
-        // --- 以下逻辑保持不变 ---
 
         // 2. 根据账号查询用户
         User user = userMapper.selectByUserAccount(user_account);
@@ -136,11 +142,11 @@ public class UserController {
             return Result.getResultMap(401, "The Account/Password is incorrect");
         }
 
-        // 6. 登录成功：写入 Session
-        session.setAttribute("userId", user.getId());
-        session.setAttribute("userAccount", user.getUser_account());
-        session.setAttribute("roleId", user.getRoleId());
-
+//        // 6. 登录成功：写入 Session
+//        session.setAttribute("userId", user.getId());
+//        session.setAttribute("userAccount", user.getUser_account());
+//        session.setAttribute("roleId", user.getRoleId());
+        String token = JwtUtils.generateToken(user.getId(), user.getUser_account(), user.getRoleId());
         // 权限列表逻辑...
         List<String> permissions = new ArrayList<>();
         if (user.isAdmin()) {
@@ -153,10 +159,10 @@ public class UserController {
         } else {
             permissions.add("reader");
         }
-        session.setAttribute("permissions", permissions);
 
         // 7. 构建返回数据
         Map<String, Object> data = new HashMap<>();
+        data.put("token", token);
         data.put("userId", user.getId());
         data.put("userAccount", user.getUser_account());
         data.put("fullName", user.getFullName());
@@ -164,7 +170,7 @@ public class UserController {
         data.put("permissions", permissions);
         data.put("Status",user.getStatus());
 
-        return Result.getResultMap(200, "登录成功", data);
+        return Result.getResultMap(200, "Login Success", data);
     }
 
     /**
@@ -172,13 +178,11 @@ public class UserController {
      * URL: GET /users/me
      * 功能：从 Session 中获取当前用户 ID，并查询完整的用户详情
      *
-     * @param session 会话对象，用于获取当前登录用户 ID
+     * @param userId 当前登录用户 ID
      * @return HashMap<String, Object> 包含用户实体的通用结果
      */
     @GetMapping("/me")
-    public HashMap<String, Object> getCurrentUserProfile(HttpSession session) {
-        // 从会话获取当前登录用户ID
-        Long userId = (Long) session.getAttribute("userId");
+    public HashMap<String, Object> getCurrentUserProfile(@RequestParam Long userId) {
         if (userId == null) {
             return Result.getResultMap(401, "请先登录");
         }
@@ -379,16 +383,16 @@ public class UserController {
         if (id == null || id <= 0) {
             return Result.getResultMap(400, "User ID is invalid");
         }
+
         // 2. 查询用户是否存在
-        User user = userMapper.selectById(id); // 假设你的 Mapper 中有此方法
+        User user = userMapper.selectById(id);
         if (user == null) {
             return Result.getResultMap(404, "User Not Found");
         }
-        List<BorrowRecord> res = borrowRecordMapper.selectUnreturnedByUserId(user.getId());
-        // 3. 执行逻辑删除
-        // 策略：不物理删除数据，而是将状态更新为 Disabled
-        // 这样可以保留借阅记录等历史数据的完整性
-        if(!res.isEmpty()) {
+
+        // 3. 检查是否有未归还的借阅记录
+        List<BorrowRecord> unreturnedRecords = borrowRecordMapper.selectUnreturnedByUserId(user.getId());
+        if (!unreturnedRecords.isEmpty()) {
             user.setStatus(User.UserStatus.Disabled);
             int rows = userMapper.updateById(user);
             if (rows > 0) {
@@ -397,11 +401,35 @@ public class UserController {
             return Result.getResultMap(500, "Deletion failed. Please try again.");
         }
 
-        int rows = userMapper.deleteById(user.getId());
-        if (rows > 0) {
-            return Result.getResultMap(200, "the user has deleted successfully.");
+        // 4. 检查是否有未支付的罚款记录
+        BigDecimal unpaidFinesSum = fineMapper.sumUnpaidFinesByUserId(user.getId());
+        if (unpaidFinesSum != null && unpaidFinesSum.compareTo(BigDecimal.ZERO) > 0) {
+            // 有未支付的罚款，将用户状态设为禁用而不是删除
+            user.setStatus(User.UserStatus.Disabled);
+            int rows = userMapper.updateById(user);
+            if (rows > 0) {
+                return Result.getResultMap(200, "the user has unpaid fines (amount: " + unpaidFinesSum + "), the delete operation shall be converted to disabling.");
+            }
+            return Result.getResultMap(500, "Operation failed. Please try again.");
         }
-        return Result.getResultMap(500, "Deletion failed. Please try again.");
+        List<BorrowRecord> transfer_out = borrowRecordMapper.selectP2pTransferOutRecordsByUserId(user.getId());
+        if (!transfer_out.isEmpty()) {
+            user.setStatus(User.UserStatus.Active);
+            return Result.getResultMap(500, "the user transfer book to other users");
+        }
+        try {
+            fineMapper.deletePaidFinesByUserId(user.getId());
+            borrowRecordMapper.deleteReturnedRecordsByUserId(user.getId());
+            int rows = userMapper.deleteById(user.getId());
+            if (rows > 0) {
+                return Result.getResultMap(200, "the user has deleted successfully.");
+            }
+            return Result.getResultMap(500, "Deletion failed. Please try again.");
+        } catch (DataIntegrityViolationException e) {
+            user.setStatus(User.UserStatus.Disabled);
+            userMapper.updateById(user);
+            return Result.getResultMap(200, "Deletion failed due to related data, user has been disabled instead.");
+        }
     }
 
     /**
@@ -539,4 +567,137 @@ public class UserController {
         userList.forEach(user -> user.setPassword(null));
         return Result.getListResultMap(200, "Query Success", userList.size(), userList);
     }
+
+    /**
+     * 管理员批量导入用户数据
+     * URL: POST /users/batch
+     * 权限: R2 (Admin)
+     * 功能：批量导入学生/教职工信息。若数据中未指定密码，则统一设置默认密码 123456；
+     *      若未指定状态，则统一设置为 Active。
+     *
+     * @param userList 包含多个用户对象的列表 (JSON 数组)
+     * @return HashMap<String, Object> 返回批量创建的结果状态
+     */
+    //TODO 管理员批量导入用户数据(R2)
+    @PostMapping("/batch")
+    public HashMap<String, Object> batchImportUsers(@RequestBody List<User> userList) {
+        if (userList == null || userList.isEmpty()) {
+            return Result.getResultMap(400, "User list cannot be empty");
+        }
+        int successCount = 0;
+        int failCount = 0;
+        List<String> errors = new ArrayList<>();
+        for (User user : userList) {
+            if (user.getUser_account() == null || user.getUser_account().trim().isEmpty()) {
+                failCount++;
+                errors.add("User account is empty");
+                continue;
+            }
+            if (user.getFullName() == null || user.getFullName().trim().isEmpty()) {
+                failCount++;
+                errors.add("User account " + user.getUser_account() + ": full name is empty");
+                continue;
+            }
+            User existingUser = userMapper.selectByUserAccount(user.getUser_account());
+            if (existingUser != null) {
+                failCount++;
+                errors.add("User account " + user.getUser_account() + " already exists");
+                continue;
+            }
+            if (user.getPassword() == null || user.getPassword().trim().isEmpty()) {
+                user.setPassword("123456");
+            }
+            if (user.getRoleId() == null) {
+                user.setRoleId(3);
+            }
+            if (user.getStatus() == null) {
+                user.setStatus(User.UserStatus.Active);
+            }
+            int rows = userMapper.insert(user);
+            if (rows > 0) {
+                successCount++;
+            } else {
+                failCount++;
+                errors.add("Failed to insert user: " + user.getUser_account());
+            }
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("successCount", successCount);
+        result.put("failCount", failCount);
+        result.put("errors", errors);
+        return Result.getResultMap(200, "Batch import completed", result);
+    }
+
+
+    /**
+     * 更新特定的全局业务规则
+     * URL: PUT users/settings/getallsettings
+     * 权限: R2 (Admin)
+     * 功能：根据配置键更新其对应的值（例如：将每日罚款金额从 0.5 修改为 1.0）
+     * 功能：展示当前系统所有的业务参数配置（如每日罚金、最大续借次数等）
+     *
+     * @return HashMap<String, Object> 包含配置详情的通用结果
+     */
+    //TODO 获取全局系统配置信息
+    @GetMapping("settings/getallsettings")
+    public HashMap<String, Object> getAllSettings() {
+        List<SystemSetting> settings = systemSettingsMapper.selectAllSettings();
+        if (settings == null || settings.isEmpty()) {
+            return Result.getResultMap(404, "No settings found");
+        }
+        return Result.getResultMap(200, "Success", settings);
+    }
+
+    /**
+     * 根据 Key 获取单个配置项的值
+     * URL: GET users/settings/getbykey
+     *
+     * @param key 配置键名称
+     * @return HashMap<String, Object> 返回对应的配置值
+     */
+    //TODO 通过配置键获取配置信息
+    @GetMapping("/settings/getbykey")
+    public HashMap<String, Object> getSettingByKey(@RequestParam String key) {
+        if (key == null || key.trim().isEmpty()) {
+            return Result.getResultMap(400, "Setting key cannot be empty");
+        }
+        BigDecimal value = systemSettingsMapper.selectValueByKey(key);
+        if (value == null) {
+            return Result.getResultMap(404, "Setting key not found");
+        }
+        Map<String, Object> data = new HashMap<>();
+        data.put("key", key);
+        data.put("value", value);
+        return Result.getResultMap(200, "Success", data);
+    }
+
+    /**
+     * 更新系统全局规则配置
+     * URL: POST /settings/update
+     * 权限: R2 (Admin)
+     * 功能：根据前端提交的 key 和 val 修改业务参数
+     * 示例参数：key="daily_fine_amount", val="1.5"
+     *
+     * @param key 配置项的键名称 (对应数据库 setting_key)
+     * @param val 配置项的新目标值 (对应数据库 setting_value)
+     * @return HashMap<String, Object> 返回更新操作的结果状态
+     */
+    //TODO 修改系统参数信息
+    @PostMapping("settings/update")
+    public HashMap<String, Object> updateSystemRule(
+            @RequestParam String key,
+            @RequestParam  Float val) {
+        if (key == null || key.trim().isEmpty()) {
+            return Result.getResultMap(400, "Setting key cannot be empty");
+        }
+        if (val == null) {
+            return Result.getResultMap(400, "Setting value cannot be empty");
+        }
+        int rows = systemSettingsMapper.updateSetting(key, val);
+        if (rows > 0) {
+            return Result.getResultMap(200, "Setting updated successfully");
+        }
+        return Result.getResultMap(404, "Setting key not found");
+    }
+
 }

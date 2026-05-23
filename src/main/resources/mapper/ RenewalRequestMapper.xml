@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.group3.xd_lms.mapper.RenewalRequestMapper">
+
+    <resultMap id="BaseResultMap" type="com.group3.xd_lms.entity.RenewalRequest">
+        <id column="id" property="id"/>
+        <result column="borrow_record_id" property="borrowRecordId"/>
+        <result column="user_id" property="userId"/>
+        <result column="request_date" property="requestDate"/>
+        <result column="status" property="status"/>
+        <result column="librarian_remark" property="librarianRemark"/>
+        <result column="processed_at" property="processedAt"/>
+        <result column="reason" property="reason"/>
+        <result column="count" property="count"/>
+    </resultMap>
+
+    <!-- 插入申请：包含理由和续借次数 -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO renewal_requests (borrow_record_id, user_id, status, reason, count)
+        VALUES (#{borrowRecordId}, #{userId}, #{status}, #{reason}, #{count})
+    </insert>
+
+    <!-- 审批操作：更新状态、馆员备注及处理时间 -->
+    <update id="updateAuditStatus">
+        UPDATE renewal_requests
+        <set>
+            status = #{status},
+            librarian_remark = #{librarianRemark},
+            processed_at = NOW()
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 按状态查询 -->
+    <select id="selectByStatus" resultMap="BaseResultMap">
+        SELECT * FROM renewal_requests
+        WHERE status = #{status}
+        ORDER BY request_date ASC
+    </select>
+
+    <!-- 唯一性校验查询：查询该用户该借阅记录下是否已有 Pending 状态的申请 -->
+    <select id="selectPendingByUserAndBorrowId" resultMap="BaseResultMap">
+        SELECT * FROM renewal_requests
+        WHERE user_id = #{userId}
+          AND borrow_record_id = #{borrowId}
+          AND status = 'Pending'
+        LIMIT 1
+    </select>
+
+    <!-- 根据ID查询 -->
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT * FROM renewal_requests WHERE id = #{id}
+    </select>
+
+</mapper>

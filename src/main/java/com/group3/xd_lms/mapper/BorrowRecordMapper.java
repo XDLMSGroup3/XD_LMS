@@ -39,4 +39,23 @@ public interface BorrowRecordMapper {
 
     // 查询所有借阅记录
     List<BorrowRecord> selectAllRecords();
+
+    //转借后修改数据库借阅记录,将书籍从 A 转移给 B，并重置借阅周期,record 包含 id(记录ID), userId(接收者ID), transferFromUserId(原持有者ID), dueDate(新应还日期)
+    int updateForP2pTransfer(BorrowRecord record);
+
+    //更新应还日期与续借次数 - 支持管理员 R2 审批通过后的数据更新
+    int updateDueDateAndRenewCount(BorrowRecord record);
+    /**
+     * 根据用户ID删除所有已归还的借阅记录
+     * @param userId 用户ID
+     * @return 删除的记录条数
+     */
+    int deleteReturnedRecordsByUserId(Long userId);
+
+    /**
+     * 查询用户转借给其他人的记录（作为转出方，未归还）
+     * @param userId 转出用户ID
+     * @return P2P转借记录列表
+     */
+    List<BorrowRecord> selectP2pTransferOutRecordsByUserId(Long userId);
 }

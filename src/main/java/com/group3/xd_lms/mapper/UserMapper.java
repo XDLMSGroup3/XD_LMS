@@ -69,6 +69,11 @@ public interface UserMapper {
     List<User> searchByKeyword(@Param("keyword") String keyword);
 
     /**
+     * 批量导入用户数据 - 用于 Admin 角色 R2 批量导入功能
+     */
+    int batchInsertUsers(@Param("userList") List<User> userList);
+
+    /**
      * 分页查询用户
      */
     List<User> selectUserPage(

@@ -5,12 +5,14 @@ import com.group3.xd_lms.entity.BorrowRecord;
 import com.group3.xd_lms.entity.User;
 import com.group3.xd_lms.mapper.BookItemMapper;
 import com.group3.xd_lms.mapper.BorrowRecordMapper;
+import com.group3.xd_lms.mapper.SystemSettingsMapper;
 import com.group3.xd_lms.mapper.UserMapper;
 import com.group3.xd_lms.utils.Result;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
@@ -23,15 +25,15 @@ public class BorrowController {
 
     private static final DateTimeFormatter DB_DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    @Autowired
     private final BorrowRecordMapper borrowRecordMapper;
     private final BookItemMapper bookItemMapper;
     private final UserMapper userMapper;
-
-    public BorrowController(BorrowRecordMapper borrowRecordMapper, BookItemMapper bookItemMapper, UserMapper userMapper) {
+    private final SystemSettingsMapper systemSettingsMapper;
+    public BorrowController(BorrowRecordMapper borrowRecordMapper, BookItemMapper bookItemMapper, UserMapper userMapper, SystemSettingsMapper systemSettingsMapper) {
         this.borrowRecordMapper = borrowRecordMapper;
         this.bookItemMapper = bookItemMapper;
         this.userMapper = userMapper;
+        this.systemSettingsMapper = systemSettingsMapper;
     }
 
     /**
@@ -50,6 +52,7 @@ public class BorrowController {
         System.out.println(rfidTag);
         BookItem bookItem = bookItemMapper.selectByRfidTag(rfidTag);
         User user = userMapper.selectById(userId);
+        BigDecimal max_loan_days = systemSettingsMapper.selectValueByKey("max_loan_days");
         if (bookItem == null) { // 未找到书目
             return Result.getResultMap(500, "Search Book Failed");
         }
@@ -61,11 +64,11 @@ public class BorrowController {
             borrowRecord.setUserId(userId);
             borrowRecord.setRfidTag(rfidTag);
             borrowRecord.setBorrowDate(LocalDateTime.now());
-            borrowRecord.setDueDate(LocalDateTime.now().plusDays(40));
+            borrowRecord.setDueDate(LocalDateTime.now().plusDays(max_loan_days.longValue()));
             borrowRecord.setUser(user);
             bookItem.setStatus(BookItem.BookStatus.Loaned);
+            bookItemMapper.updateStatus(rfidTag,BookItem.BookStatus.Loaned.name());
             borrowRecordMapper.insert(borrowRecord);
-            bookItemMapper.updateByRfidTag(bookItem);
             return Result.getResultMap(200, "Borrow Book Success");
         } else {
             return Result.getResultMap(500, "the Item Can't  Be Borrowed");
@@ -102,7 +105,7 @@ public class BorrowController {
         // 3. 权限校验 (如果传入了 userId，则校验是否匹配)
         if (userId != null) {
             if (!userId.equals(record.getUserId())) {
-                return Result.getResultMap(403, "当前用户无权归还该图书");
+                return Result.getResultMap(500, "当前用户无权归还该图书");
             }
         }
 

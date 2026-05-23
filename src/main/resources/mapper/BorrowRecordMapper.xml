@@ -67,4 +67,42 @@
         SELECT * FROM borrow_records
     </select>
 
+
+    <!-- 2. 更新应还日期与续借次数 -->
+    <!-- 说明：用于管理员审批通过续借申请后，延长该书籍的归还期限并累加续借计数 -->
+    <update id="updateDueDateAndRenewCount">
+        UPDATE borrow_records
+        <set>
+            due_date = #{dueDate},
+            renew_count = #{renewCount}
+        </set>
+        WHERE id = #{id}
+    </update>
+
+
+    <!-- 扫码直转：原子化更新借阅人及转借标记 -->
+    <!-- 逻辑：修改持有者ID，标记为P2P，记录前任ID，重置借阅起始时间和续借计数 -->
+    <update id="updateForP2pTransfer">
+        UPDATE borrow_records
+        SET
+            user_id = #{userId},
+            is_p2p_transfer = 1,
+            transfer_from_user_id = #{transferFromUserId},
+            borrow_date = NOW(),
+            due_date = #{dueDate},
+            renew_count = 0
+        WHERE id = #{id}
+    </update>
+    <!-- 根据用户ID删除所有已归还的记录 -->
+    <delete id="deleteReturnedRecordsByUserId">
+        DELETE FROM borrow_records
+        WHERE user_id = #{userId} AND return_date IS NOT NULL
+    </delete>
+
+    <select id="selectP2pTransferOutRecordsByUserId" resultMap="BaseResultMap">
+        SELECT * FROM borrow_records
+        WHERE transfer_from_user_id = #{userId}
+          AND is_p2p_transfer = 1
+          AND return_date IS NULL
+    </select>
 </mapper>
