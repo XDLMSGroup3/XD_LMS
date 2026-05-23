@@ -82,4 +82,16 @@
         SET amount = #{amount}
         WHERE id = #{id}
     </update>
+    <!-- 根据用户ID删除已支付的罚款记录 -->
+    <delete id="deletePaidFinesByUserId">
+        DELETE FROM fines WHERE user_id = #{userId} AND status = 'Paid'
+    </delete>
+
+    <!-- 根据用户ID查询未支付罚款 -->
+    <select id="selectUnpaidFinesByUserId" resultMap="BaseResultMap">
+        SELECT * FROM fines
+        WHERE user_id = #{userId} AND status = 'Unpaid'
+        ORDER BY created_at DESC
+    </select>
+
 </mapper>

@@ -19,7 +19,7 @@ public class JwtUtils {
     // private static final String SECRET_STRING = "your-256-bit-secret-key-here-must-be-32-chars";
     // private static final Key SECRET_KEY = Keys.hmacShaKeyFor(SECRET_STRING.getBytes());
 
-    private static final long EXPIRE_TIME = 3600000; // 1小时
+    private static final long EXPIRE_TIME = 86400000; // 1小时
 
     /**
      * 生成 token

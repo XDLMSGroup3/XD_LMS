@@ -59,4 +59,8 @@ public interface FineMapper {
      */
     int updateFineAmount(@Param("id") Long id, @Param("amount") BigDecimal amount);
 
+
+    int deletePaidFinesByUserId(Long userId);
+
+    List<Fine> selectUnpaidFinesByUserId(Long userId);
 }

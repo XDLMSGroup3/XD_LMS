@@ -93,4 +93,16 @@
             renew_count = 0
         WHERE id = #{id}
     </update>
+    <!-- 根据用户ID删除所有已归还的记录 -->
+    <delete id="deleteReturnedRecordsByUserId">
+        DELETE FROM borrow_records
+        WHERE user_id = #{userId} AND return_date IS NOT NULL
+    </delete>
+
+    <select id="selectP2pTransferOutRecordsByUserId" resultMap="BaseResultMap">
+        SELECT * FROM borrow_records
+        WHERE transfer_from_user_id = #{userId}
+          AND is_p2p_transfer = 1
+          AND return_date IS NULL
+    </select>
 </mapper>

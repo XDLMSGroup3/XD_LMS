@@ -45,4 +45,17 @@ public interface BorrowRecordMapper {
 
     //更新应还日期与续借次数 - 支持管理员 R2 审批通过后的数据更新
     int updateDueDateAndRenewCount(BorrowRecord record);
+    /**
+     * 根据用户ID删除所有已归还的借阅记录
+     * @param userId 用户ID
+     * @return 删除的记录条数
+     */
+    int deleteReturnedRecordsByUserId(Long userId);
+
+    /**
+     * 查询用户转借给其他人的记录（作为转出方，未归还）
+     * @param userId 转出用户ID
+     * @return P2P转借记录列表
+     */
+    List<BorrowRecord> selectP2pTransferOutRecordsByUserId(Long userId);
 }

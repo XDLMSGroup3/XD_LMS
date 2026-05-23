@@ -37,8 +37,8 @@ public class OverdueTask {
      * 3. 对于新逾期的记录：创建罚款记录，金额 = 逾期天数 × 每日罚金
      */
     @Transactional
-    @Scheduled(cron = "0 1 0 * * ?") // 每天凌晨 00:01
-//    @Scheduled(cron = "0/1 * * * * ?") // 测试用：每 1 秒执行一次
+//    @Scheduled(cron = "0 1 0 * * ?") // 每天凌晨 00:01
+    @Scheduled(cron = "0/1 * * * * ?") // 测试用：每 1 秒执行一次
     public void autoUpdateOverdueFines() {
 
         // 1. 从系统设置中获取每日罚金单价
