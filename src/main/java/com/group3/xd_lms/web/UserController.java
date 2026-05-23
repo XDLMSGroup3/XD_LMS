@@ -3,6 +3,7 @@ package com.group3.xd_lms.web;
 import com.group3.xd_lms.entity.BorrowRecord;
 import com.group3.xd_lms.entity.SystemSetting;
 import com.group3.xd_lms.entity.User;
+import com.group3.xd_lms.mapper.FineMapper;
 import com.group3.xd_lms.mapper.SystemSettingsMapper;
 import com.group3.xd_lms.mapper.BorrowRecordMapper;
 import com.group3.xd_lms.mapper.UserMapper;
@@ -12,6 +13,7 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -25,11 +27,12 @@ public class UserController {
     private final UserMapper userMapper;
     private final BorrowRecordMapper borrowRecordMapper;
     private final SystemSettingsMapper systemSettingsMapper;
-
-    public UserController(UserMapper userMapper,BorrowRecordMapper borrowRecordMapper,SystemSettingsMapper systemSettingsMapper) {
+    private final FineMapper fineMapper;
+    public UserController(UserMapper userMapper,BorrowRecordMapper borrowRecordMapper,SystemSettingsMapper systemSettingsMapper,FineMapper fineMapper) {
         this.userMapper = userMapper;
         this.borrowRecordMapper = borrowRecordMapper;
         this.systemSettingsMapper = systemSettingsMapper;
+        this.fineMapper = fineMapper;
     }
     /**
      * 用户注册接口
@@ -380,13 +383,16 @@ public class UserController {
         if (id == null || id <= 0) {
             return Result.getResultMap(400, "User ID is invalid");
         }
+
         // 2. 查询用户是否存在
-        User user = userMapper.selectById(id); // 假设你的 Mapper 中有此方法
+        User user = userMapper.selectById(id);
         if (user == null) {
             return Result.getResultMap(404, "User Not Found");
         }
-        List<BorrowRecord> res = borrowRecordMapper.selectUnreturnedByUserId(user.getId());
-        if(!res.isEmpty()) {
+
+        // 3. 检查是否有未归还的借阅记录
+        List<BorrowRecord> unreturnedRecords = borrowRecordMapper.selectUnreturnedByUserId(user.getId());
+        if (!unreturnedRecords.isEmpty()) {
             user.setStatus(User.UserStatus.Disabled);
             int rows = userMapper.updateById(user);
             if (rows > 0) {
@@ -395,11 +401,35 @@ public class UserController {
             return Result.getResultMap(500, "Deletion failed. Please try again.");
         }
 
-        int rows = userMapper.deleteById(user.getId());
-        if (rows > 0) {
-            return Result.getResultMap(200, "the user has deleted successfully.");
+        // 4. 检查是否有未支付的罚款记录
+        BigDecimal unpaidFinesSum = fineMapper.sumUnpaidFinesByUserId(user.getId());
+        if (unpaidFinesSum != null && unpaidFinesSum.compareTo(BigDecimal.ZERO) > 0) {
+            // 有未支付的罚款，将用户状态设为禁用而不是删除
+            user.setStatus(User.UserStatus.Disabled);
+            int rows = userMapper.updateById(user);
+            if (rows > 0) {
+                return Result.getResultMap(200, "the user has unpaid fines (amount: " + unpaidFinesSum + "), the delete operation shall be converted to disabling.");
+            }
+            return Result.getResultMap(500, "Operation failed. Please try again.");
         }
-        return Result.getResultMap(500, "Deletion failed. Please try again.");
+        List<BorrowRecord> transfer_out = borrowRecordMapper.selectP2pTransferOutRecordsByUserId(user.getId());
+        if (!transfer_out.isEmpty()) {
+            user.setStatus(User.UserStatus.Active);
+            return Result.getResultMap(500, "the user transfer book to other users");
+        }
+        try {
+            fineMapper.deletePaidFinesByUserId(user.getId());
+            borrowRecordMapper.deleteReturnedRecordsByUserId(user.getId());
+            int rows = userMapper.deleteById(user.getId());
+            if (rows > 0) {
+                return Result.getResultMap(200, "the user has deleted successfully.");
+            }
+            return Result.getResultMap(500, "Deletion failed. Please try again.");
+        } catch (DataIntegrityViolationException e) {
+            user.setStatus(User.UserStatus.Disabled);
+            userMapper.updateById(user);
+            return Result.getResultMap(200, "Deletion failed due to related data, user has been disabled instead.");
+        }
     }
 
     /**
